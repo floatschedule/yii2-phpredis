@@ -1,5 +1,5 @@
 {
-  "name": "floatschedule/yii2-phpredis",
+  "name": "dcb9/yii2-phpredis",
   "description": "yii2 with phpredis",
   "minimum-stability": "stable",
   "license": "BSD",
