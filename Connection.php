@@ -123,8 +123,8 @@ class Connection extends Redis implements Configurable
         return parent::ping() === '+PONG';
     }
 
-    public function flushdb()
+    public function flushDB($async = null)
     {
-        return parent::flushDB();
+        return parent::flushDB($async);
     }
 }
