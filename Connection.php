@@ -42,7 +42,10 @@ class Connection extends Redis implements Configurable
      * @var float value in seconds (optional, default is 0.0 meaning unlimited)
      */
     public $connectionTimeout = 0.0;
-
+    /**
+     * @var float value in seconds (optional, default is 0.0 meaning unlimited)
+     */
+    public $readTimeout = 0.0;
     /**
      * Constructor.
      * The default implementation does two things:
@@ -99,7 +102,7 @@ class Connection extends Redis implements Configurable
             if(is_null($timeout)){
                 $timeout = $this->connectionTimeout;
             }
-            $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval);
+            $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval, $this->readTimeout);
         }
 
         if ($isConnected === false) {
