@@ -200,7 +200,6 @@ class Connection extends Redis implements Configurable
                 // In case Redis is not accessible, close the connection, wait for the retry interval.
                 $this->close();
                 if ($this->retryInterval > 0) {
-                    //echo 'retry interval <br/>';
                     usleep($this->retryInterval);
                 }
             }
