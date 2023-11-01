@@ -6,6 +6,7 @@ use Redis;
 use Yii;
 use yii\base\Configurable;
 use RedisException;
+use SocketException;
 
 /**
  * Class Connection
@@ -81,6 +82,67 @@ class Connection extends Redis implements Configurable
         }
     }
 
+    private $multiExecCommand   = false;
+    private $multiCommands      = [];
+    private $redisRetryCommands = [
+        'retrySet'      => 'SET',
+        'retryGet'      => 'GET',
+        'retryKeys'     => 'KEYS',
+        'retryDel'      => 'DEL',
+        'retryTTL'      => 'TTL',
+        'retryMulti'    => 'MULTI',
+        'retrySAdd'     => 'SADD',
+        'retryExec'     => 'EXEC',
+        'retryExpire'   => 'EXPIRE',
+        'retrySMembers' => 'sMembers',
+        'retryUnlink'   => 'UNLINK',
+        'retryPublish'  => 'PUBLISH',
+    ];
+
+    /**
+     * Allows issuing all supported commands via magic methods.
+     *
+     * @param string $command - name of the missing method to execute
+     * @param array  $params  - method call arguments
+     * 
+     * @return mixed
+     */
+    public function __call($command, $params)
+    {
+        if (in_array($command, array_keys($this->redisRetryCommands))) {
+            if ($command === 'retryMulti') {
+                $this->multiExecCommand = true;
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                return $this;
+            }
+            if ($this->multiExecCommand === true && $command !== 'retryExec') {
+                // Chain all commands between retryMulti and retryExec.
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                return $this;
+            }
+            if ($this->multiExecCommand === true && $command === 'retryExec') {
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                $this->multiExecCommand = false;
+                return $this->executeMultiCommand($this->multiCommands);
+            }
+            if ($this->multiExecCommand === false) {
+                return $this->executeCommand($this->computeRawCommand($command, $params));
+            }
+        }
+
+        return parent::__call($command, $params);
+    }
+
+    private function computeRawCommand($command, $params)
+    {
+        $completeCommand   = [];
+        $completeCommand[] = $this->redisRetryCommands[$command];
+        foreach ($params as $param) {
+            $completeCommand[] = $param;
+        }
+        return $completeCommand;
+    }
+
     /**
      * Returns the fully qualified name of this class.
      * @return string the fully qualified name of this class.
@@ -103,7 +165,7 @@ class Connection extends Redis implements Configurable
      * @return bool
      */
     public function open( $host = null, $port = null, $timeout = null, $retry_interval = 0 )
-    {
+    { 
         if ($this->unixSocket !== null) {
             $isConnected = $this->connect($this->unixSocket);
         } else {
@@ -116,6 +178,7 @@ class Connection extends Redis implements Configurable
             if(is_null($timeout)){
                 $timeout = $this->connectionTimeout;
             }
+            
             $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval, $this->readTimeout);
         }
 
