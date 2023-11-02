@@ -111,7 +111,7 @@ class Connection extends Redis implements Configurable
         if (in_array($command, array_keys($this->redisRetryCommands))) {
             if ($command === 'retryMulti') {
                 $this->multiExecCommand = true;
-                $this->multiCommands[]  = [];
+                $this->multiCommands    = [];
                 $this->multiCommands[]  = $this->computeRawCommand($command, $params);
                 return $this;
             }
@@ -124,7 +124,7 @@ class Connection extends Redis implements Configurable
                 $this->multiCommands[]  = $this->computeRawCommand($command, $params);
                 $this->multiExecCommand = false;
                 $responseMultiCommand   = $this->executeMultiCommand($this->multiCommands);
-                $this->multiCommands[]  = [];
+                $this->multiCommands    = [];
                 return $responseMultiCommand;
             }
             if ($this->multiExecCommand === false) {
