@@ -6,7 +6,6 @@ use Redis;
 use Yii;
 use yii\base\Configurable;
 use RedisException;
-use SocketException;
 
 /**
  * Class Connection
@@ -112,6 +111,7 @@ class Connection extends Redis implements Configurable
         if (in_array($command, array_keys($this->redisRetryCommands))) {
             if ($command === 'retryMulti') {
                 $this->multiExecCommand = true;
+                $this->multiCommands[]  = [];
                 $this->multiCommands[]  = $this->computeRawCommand($command, $params);
                 return $this;
             }
@@ -123,7 +123,9 @@ class Connection extends Redis implements Configurable
             if ($this->multiExecCommand === true && $command === 'retryExec') {
                 $this->multiCommands[]  = $this->computeRawCommand($command, $params);
                 $this->multiExecCommand = false;
-                return $this->executeMultiCommand($this->multiCommands);
+                $responseMultiCommand   = $this->executeMultiCommand($this->multiCommands);
+                $this->multiCommands[]  = [];
+                return $responseMultiCommand;
             }
             if ($this->multiExecCommand === false) {
                 return $this->executeCommand($this->computeRawCommand($command, $params));
@@ -165,7 +167,7 @@ class Connection extends Redis implements Configurable
      * @return bool
      */
     public function open( $host = null, $port = null, $timeout = null, $retry_interval = 0 )
-    { 
+    {
         if ($this->unixSocket !== null) {
             $isConnected = $this->connect($this->unixSocket);
         } else {
