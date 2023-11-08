@@ -46,6 +46,20 @@ class Connection extends Redis implements Configurable
      * @var float value in seconds (optional, default is 0.0 meaning unlimited)
      */
     public $readTimeout = 0.0;
+
+    /**
+     * Retry interval - value in ms
+     *
+     * @var integer
+     */
+    public $retryInterval = 0;
+
+    /**
+     * Number of retries.
+     *
+     * @var integer
+     */
+    public $retries       = 0;
     /**
      * Constructor.
      * The default implementation does two things:
@@ -65,6 +79,70 @@ class Connection extends Redis implements Configurable
         if (!empty($config)) {
             Yii::configure($this, $config);
         }
+    }
+
+    private $multiExecCommand   = false;
+    private $multiCommands      = [];
+    private $redisRetryCommands = [
+        'retrySet'      => 'SET',
+        'retryGet'      => 'GET',
+        'retryKeys'     => 'KEYS',
+        'retryDel'      => 'DEL',
+        'retryTTL'      => 'TTL',
+        'retryMulti'    => 'MULTI',
+        'retrySAdd'     => 'SADD',
+        'retryExec'     => 'EXEC',
+        'retryExpire'   => 'EXPIRE',
+        'retrySMembers' => 'sMembers',
+        'retryUnlink'   => 'UNLINK',
+        'retryPublish'  => 'PUBLISH',
+    ];
+
+    /**
+     * Allows issuing all supported commands via magic methods.
+     *
+     * @param string $command - name of the missing method to execute
+     * @param array  $params  - method call arguments
+     * 
+     * @return mixed
+     */
+    public function __call($command, $params)
+    {
+        if (in_array($command, array_keys($this->redisRetryCommands))) {
+            if ($command === 'retryMulti') {
+                $this->multiExecCommand = true;
+                $this->multiCommands    = [];
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                return $this;
+            }
+            if ($this->multiExecCommand === true && $command !== 'retryExec') {
+                // Chain all commands between retryMulti and retryExec.
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                return $this;
+            }
+            if ($this->multiExecCommand === true && $command === 'retryExec') {
+                $this->multiCommands[]  = $this->computeRawCommand($command, $params);
+                $this->multiExecCommand = false;
+                $responseMultiCommand   = $this->executeMultiCommand($this->multiCommands);
+                $this->multiCommands    = [];
+                return $responseMultiCommand;
+            }
+            if ($this->multiExecCommand === false) {
+                return $this->executeCommand($this->computeRawCommand($command, $params));
+            }
+        }
+
+        return parent::__call($command, $params);
+    }
+
+    private function computeRawCommand($command, $params)
+    {
+        $completeCommand   = [];
+        $completeCommand[] = $this->redisRetryCommands[$command];
+        foreach ($params as $param) {
+            $completeCommand[] = $param;
+        }
+        return $completeCommand;
     }
 
     /**
@@ -102,6 +180,7 @@ class Connection extends Redis implements Configurable
             if(is_null($timeout)){
                 $timeout = $this->connectionTimeout;
             }
+            
             $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval, $this->readTimeout);
         }
 
@@ -129,5 +208,135 @@ class Connection extends Redis implements Configurable
     public function flushDB($async = null)
     {
         return parent::flushDB($async);
+    }
+
+    /**
+     * Execute Multi exec command.
+     *
+     * @param array $commands - Command to run on Redis.
+     * 
+     * @return mixed
+     */
+    public function executeMultiCommand(array $commands = [])
+    {
+        // Run Redis command with retries.
+        if ($this->retries > 0) {
+            return $this->retryExecuteMultiCommand($commands);
+        }
+
+        return $this->executeMultiCommandOnce($commands);
+    }
+
+    /**
+     * Execute Redis command once. Will throw an Redis Exception in case there is a connection error.
+     *
+     * @param array $commands - Command to run on Redis.
+     * 
+     * @return mixed
+     */
+    protected function executeMultiCommandOnce(array $commands = [])
+    {
+        $this->open();
+        $responses = [];
+        foreach ($commands as $i => $command) {
+            $responses[$i] = $this->sendRawCommand($command);
+        }
+        return $responses;
+    }
+
+    /**
+     * Execute Redis MULTI command with retry and retry interval.
+     * No Exception is thrown in case there is a connection error.
+     *
+     * @param array $commands - Command (multi dimensional array of commands).
+     *
+     * @return mixed
+     */
+    protected function retryExecuteMultiCommand(array $commands = [])
+    {
+        $tries = $this->retries;
+        while ($tries-- > 0) {
+            try {
+                // Try to open a Redis connection and execute the command.
+                return $this->executeMultiCommandOnce($commands);
+            } catch (RedisException $exception) {
+                // Log any exception with Yii error.
+                Yii::error($exception, __METHOD__);
+                // In case Redis is not accessible, close the connection, wait for the retry interval.
+                $this->close();
+                if ($this->retryInterval > 0) {
+                    usleep($this->retryInterval * 1000);
+                }
+            }
+        }
+    }
+
+    /**
+     * Execute Redis command.
+     *
+     * @param array $command - Command to run on Redis.
+     * 
+     * @return mixed
+     */
+    public function executeCommand(array $command = [])
+    {
+        // Run Redis command with retries.
+        if ($this->retries > 0) {
+            return $this->retryExecuteCommand($command);
+        }
+
+        return $this->executeCommandOnce($command);
+    }
+
+    /**
+     * Execute Redis command once. Will throw an Redis Exception in case there is a connection error.
+     *
+     * @param array $command - Command to run on Redis.
+     * 
+     * @return mixed
+     */
+    protected function executeCommandOnce(array $command = [])
+    {
+        $this->open();
+        return $this->sendRawCommand($command);
+    }
+
+    /**
+     * Execute Redis command with retry and retry interval. No Exception is thrown in case there is a connection error.
+     *
+     * @param array $command - Command.
+     *
+     * @return mixed
+     */
+    protected function retryExecuteCommand(array $command = [])
+    {
+        $tries = $this->retries;
+        while ($tries-- > 0) {
+            try {
+                // Try to open a Redis connection and execute the command.
+                return $this->executeCommandOnce($command);
+            } catch (RedisException $exception) {
+                // Log any exception with Yii error.
+                Yii::error($exception, __METHOD__);
+                // In case Redis is not accessible, close the connection, wait for the retry interval.
+                $this->close();
+                if ($this->retryInterval > 0) {
+                    usleep($this->retryInterval * 1000);
+                }
+            }
+        }
+    }
+
+    /**
+     * Run Redis rawCommand with function array.
+     *
+     * @param array $command - Command
+     *
+     * @return void
+     */
+    protected function sendRawCommand(array $command)
+    {
+        $response = call_user_func_array(array($this, 'rawCommand'), $command);
+        return $response;
     }
 }
