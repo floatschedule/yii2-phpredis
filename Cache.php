@@ -3,7 +3,7 @@
 namespace dcb9\redis;
 
 use Yii;
-use Exception;
+use Throwable;
 use yii\di\Instance;
 
 class Cache extends \yii\caching\Cache
@@ -41,7 +41,7 @@ class Cache extends \yii\caching\Cache
         try {
             $this->redis->open();
             return (bool)$this->redis->exists($key);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -60,7 +60,7 @@ class Cache extends \yii\caching\Cache
         try {
             $this->redis->open();
             return $this->redis->get($key);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -80,7 +80,7 @@ class Cache extends \yii\caching\Cache
         try {
             $this->redis->open();
             $response = $this->redis->mget($keys);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -111,7 +111,7 @@ class Cache extends \yii\caching\Cache
             } else {
                 return (bool)$this->redis->setEx($key, $expire, $value);
             }
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -151,7 +151,7 @@ class Cache extends \yii\caching\Cache
             }
 
             return $failedKeys;
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -177,7 +177,7 @@ class Cache extends \yii\caching\Cache
             }
     
             return (bool)$this->redis->rawCommand('SET', $key, $value, 'EX', $expire, 'NX');
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -197,7 +197,7 @@ class Cache extends \yii\caching\Cache
         try {
             $this->redis->open();
             return (bool)$this->redis->del($key);
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
@@ -217,7 +217,7 @@ class Cache extends \yii\caching\Cache
         try {
             $this->redis->open();
             return $this->redis->flushdb();
-        } catch (Exception $e) {
+        } catch (Throwable $e) {
             Yii::warning(
                 __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
             );
