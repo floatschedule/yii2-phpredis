@@ -2,6 +2,8 @@
 
 namespace dcb9\redis;
 
+use Yii;
+use Throwable;
 use yii\di\Instance;
 
 class Cache extends \yii\caching\Cache
@@ -15,6 +17,8 @@ class Cache extends \yii\caching\Cache
      */
     public $redis = 'redis';
 
+    public $silentFail = false;
+
     /**
      * Initializes the redis Cache component.
      * This method will initialize the [[redis]] property to make sure it refers to a valid redis connection.
@@ -24,7 +28,6 @@ class Cache extends \yii\caching\Cache
     {
         parent::init();
         $this->redis = Instance::ensure($this->redis, Connection::className());
-        $this->redis->open();
     }
 
 
@@ -35,7 +38,18 @@ class Cache extends \yii\caching\Cache
     {
         $key = $this->buildKey($key);
 
-        return (bool)$this->redis->exists($key);
+        try {
+            $this->redis->open();
+            return (bool)$this->redis->exists($key);
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+        }
     }
 
     /**
@@ -43,7 +57,18 @@ class Cache extends \yii\caching\Cache
      */
     protected function getValue($key)
     {
-        return $this->redis->get($key);
+        try {
+            $this->redis->open();
+            return $this->redis->get($key);
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+        }
     }
 
     /**
@@ -51,8 +76,21 @@ class Cache extends \yii\caching\Cache
      */
     protected function getValues($keys)
     {
-        $response = $this->redis->mget($keys);
         $result = [];
+        try {
+            $this->redis->open();
+            $response = $this->redis->mget($keys);
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+            return $result;
+        }
+        
         $i = 0;
         foreach ($keys as $key) {
             $result[$key] = $response[$i++];
@@ -66,10 +104,21 @@ class Cache extends \yii\caching\Cache
      */
     protected function setValue($key, $value, $expire)
     {
-        if ($expire == 0) {
-            return (bool)$this->redis->set($key, $value);
-        } else {
-            return (bool)$this->redis->setEx($key, $expire, $value);
+        try {
+            $this->redis->open();
+            if ($expire == 0) {
+                return (bool)$this->redis->set($key, $value);
+            } else {
+                return (bool)$this->redis->setEx($key, $expire, $value);
+            }
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
         }
     }
 
@@ -78,28 +127,41 @@ class Cache extends \yii\caching\Cache
      */
     protected function setValues($data, $expire)
     {
-        $failedKeys = [];
-        if ($expire == 0) {
-            $this->redis->mSet($data);
-        } else {
-            $expire = (int)$expire;
-            $this->redis->multi();
-            $this->redis->mSet($data);
-            $index = [];
-            foreach ($data as $key => $value) {
-                $this->redis->expire($key, $expire);
-                $index[] = $key;
-            }
-            $result = $this->redis->exec();
-            array_shift($result);
-            foreach ($result as $i => $r) {
-                if ($r != 1) {
-                    $failedKeys[] = $index[$i];
+        try {
+            $this->redis->open();
+            $failedKeys = [];
+            if ($expire == 0) {
+                $this->redis->mSet($data);
+            } else {
+                $expire = (int)$expire;
+                $this->redis->multi();
+                $this->redis->mSet($data);
+                $index = [];
+                foreach ($data as $key => $value) {
+                    $this->redis->expire($key, $expire);
+                    $index[] = $key;
+                }
+                $result = $this->redis->exec();
+                array_shift($result);
+                foreach ($result as $i => $r) {
+                    if ($r != 1) {
+                        $failedKeys[] = $index[$i];
+                    }
                 }
             }
-        }
 
-        return $failedKeys;
+            return $failedKeys;
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+
+            return [];
+        }
     }
 
 
@@ -108,11 +170,23 @@ class Cache extends \yii\caching\Cache
      */
     protected function addValue($key, $value, $expire)
     {
-        if ($expire == 0) {
-            return (bool)$this->redis->setNx($key, $value);
-        }
+        try {
+            $this->redis->open();
+            if ($expire == 0) {
+                return (bool)$this->redis->setNx($key, $value);
+            }
+    
+            return (bool)$this->redis->rawCommand('SET', $key, $value, 'EX', $expire, 'NX');
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
 
-        return (bool)$this->redis->rawCommand('SET', $key, $value, 'EX', $expire, 'NX');
+            if (!$this->silentFail) {
+                throw $e;
+            }
+            return false;
+        }
     }
 
     /**
@@ -120,7 +194,19 @@ class Cache extends \yii\caching\Cache
      */
     protected function deleteValue($key)
     {
-        return (bool)$this->redis->del($key);
+        try {
+            $this->redis->open();
+            return (bool)$this->redis->del($key);
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+            return false;
+        }
     }
 
     /**
@@ -128,6 +214,18 @@ class Cache extends \yii\caching\Cache
      */
     protected function flushValues()
     {
-        return $this->redis->flushdb();
+        try {
+            $this->redis->open();
+            return $this->redis->flushdb();
+        } catch (Throwable $e) {
+            Yii::warning(
+                __METHOD__ . ' Open Redis connection error:' . $e->getMessage()
+            );
+
+            if (!$this->silentFail) {
+                throw $e;
+            }
+            return false;
+        }
     }
 }
