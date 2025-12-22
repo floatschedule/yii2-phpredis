@@ -166,20 +166,16 @@ class Connection extends Redis implements Configurable
      * @param int       $retry_interval
      * @return bool
      */
-    public function open( $host = null, $port = null, $timeout = null, $retry_interval = 0 )
+    public function open(string $host = 'localhost', int $port = 6379, float $timeout = 0, ?string $persistent_id = null, int $retry_interval = 0, float $read_timeout = 0, ?array $context = null): bool
     {
         if ($this->unixSocket !== null) {
             $isConnected = $this->connect($this->unixSocket);
         } else {
-            if(is_null($host)){
-                $host = $this->hostname;
-            }
-            if(is_null($port)){
-                $port = $this->port;
-            }
-            if(is_null($timeout)){
-                $timeout = $this->connectionTimeout;
-            }
+            // Use class properties if set, otherwise fall back to parameter defaults.
+            // This preserves original behavior where Yii2 config takes precedence.
+            $host = $this->hostname ?: $host;
+            $port = $this->port ?: $port;
+            $timeout = $this->connectionTimeout ?: $timeout;
             
             $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval, $this->readTimeout);
         }
@@ -195,14 +191,16 @@ class Connection extends Redis implements Configurable
         if ($this->database !== null) {
             $this->select($this->database);
         }
+
+        return true;
     }
 
     /**
      * @return bool
      */
-    public function ping()
+    public function ping(?string $message = null): \Redis|string|bool
     {
-        return parent::ping() === '+PONG';
+        return parent::ping($message) === '+PONG';
     }
 
     public function flushDB(?bool $sync = null): \Redis|bool
