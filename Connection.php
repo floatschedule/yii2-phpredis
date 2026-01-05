@@ -173,8 +173,8 @@ class Connection extends Redis implements Configurable
         } else {
             // Use class properties if set, otherwise fall back to parameter defaults.
             // This preserves original behavior where Yii2 config takes precedence.
-            $host = $this->hostname ?: $host;
-            $port = $this->port ?: $port;
+            $host    = $this->hostname ?: $host;
+            $port    = $this->port ?: $port;
             $timeout = $this->connectionTimeout ?: $timeout;
             
             $isConnected = $this->connect($host, $port, $timeout, null, $retry_interval, $this->readTimeout);
